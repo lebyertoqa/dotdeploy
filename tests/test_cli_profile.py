@@ -71,6 +71,14 @@ def test_deploy_calls_deploy_profile(config, capsys):
     assert config.get("active_profile") == "dev"
 
 
+def test_deploy_unknown_profile_returns_1(config, capsys):
+    """Deploying a profile that doesn't exist should return exit code 1."""
+    rc = cmd_profile_deploy(_Args(name="nonexistent"), config)
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "nonexistent" in out
+
+
 def test_undeploy_clears_active(config, capsys):
     config.add_profile("dev")
     config.set("active_profile", "dev")
