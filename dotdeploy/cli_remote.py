@@ -6,10 +6,17 @@ from pathlib import Path
 from dotdeploy.config import Config
 from dotdeploy.remote import RemoteBackupError, init_repo, pull_backup, push_backup, set_remote
 
+_DEFAULT_BACKUP_REPO = str(Path.home() / ".dotdeploy-backup")
+
+
+def _get_repo_path(config: Config) -> Path:
+    """Return the configured backup repository path."""
+    return Path(config.get("backup_repo", _DEFAULT_BACKUP_REPO))
+
 
 def cmd_remote_init(args: argparse.Namespace, config: Config) -> int:
     """Initialise a local git repo and optionally set a remote URL."""
-    repo_path = Path(config.get("backup_repo", str(Path.home() / ".dotdeploy-backup")))
+    repo_path = _get_repo_path(config)
     try:
         init_repo(repo_path)
         print(f"Initialised backup repository at {repo_path}")
@@ -26,7 +33,7 @@ def cmd_remote_init(args: argparse.Namespace, config: Config) -> int:
 
 def cmd_remote_push(args: argparse.Namespace, config: Config) -> int:
     """Push local dotfiles backup to the remote."""
-    repo_path = Path(config.get("backup_repo", str(Path.home() / ".dotdeploy-backup")))
+    repo_path = _get_repo_path(config)
     message = getattr(args, "message", "dotdeploy backup")
     try:
         push_backup(repo_path, message=message)
@@ -39,7 +46,7 @@ def cmd_remote_push(args: argparse.Namespace, config: Config) -> int:
 
 def cmd_remote_pull(args: argparse.Namespace, config: Config) -> int:
     """Pull the latest backup from the remote."""
-    repo_path = Path(config.get("backup_repo", str(Path.home() / ".dotdeploy-backup")))
+    repo_path = _get_repo_path(config)
     try:
         pull_backup(repo_path)
         print("Backup pulled successfully.")
