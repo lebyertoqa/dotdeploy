@@ -1,85 +1,81 @@
-"""Profile-based dotfile deployment for dotdeploy."""
+"""Profile deploy/undeploy with hook execution."""
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Optional
 
 from dotdeploy.config import Config
-from dotdeploy.symlink import create_symlink, remove_symlink, SymlinkError
+from dotdeploy.hooks import HookError, run_hook
+from dotdeploy.symlink import SymlinkError, create_symlink, remove_symlink
 
 
 class ProfileDeployError(Exception):
     """Raised when deploying or undeploying a profile fails."""
-    pass
 
 
 def deploy_profile(
     config: Config,
-    profile_name: str,
-    backup_dir: str = "~/.dotdeploy_backups",
-    force: bool = False,
-) -> List[str]:
+    profile: str,
+    backup: bool = True,
+    config_dir: Optional[Path] = None,
+) -> None:
+    """Create symlinks for every mapping in *profile*.
+
+    Runs pre_deploy hook before and post_deploy hook after linking.
+    Raises ProfileDeployError on unknown profile or symlink failure.
     """
-    Deploy all symlinks defined in the given profile.
+    profiles = config.get("profiles", {})
+    if profile not in profiles:
+        raise ProfileDeployError(f"Unknown profile '{profile}'")
 
-    Args:
-        config: Loaded Config instance.
-        profile_name: Name of the profile to deploy.
-        backup_dir: Directory to back up existing files before replacing.
-        force: If True, overwrite existing symlinks/files without error.
+    cdir = config_dir or Path(config._path).parent
 
-    Returns:
-        List of target paths that were successfully linked.
+    try:
+        run_hook(cdir, profile, "pre_deploy")
+    except HookError as exc:
+        raise ProfileDeployError(str(exc)) from exc
 
-    Raises:
-        ProfileDeployError: If the profile is unknown or a symlink fails.
-    """
-    if profile_name not in config.profiles:
-        raise ProfileDeployError(f"Unknown profile: '{profile_name}'")
-
-    links: Dict[str, str] = config.profiles[profile_name].get("links", {})
-    deployed: List[str] = []
-
-    for source, target in links.items():
+    mappings = profiles[profile].get("mappings", {})
+    for src, dst in mappings.items():
         try:
-            create_symlink(source, target, backup_dir=backup_dir, force=force)
-            deployed.append(target)
+            create_symlink(src, dst, backup=backup)
         except SymlinkError as exc:
-            raise ProfileDeployError(
-                f"Failed to link '{source}' -> '{target}': {exc}"
-            ) from exc
+            raise ProfileDeployError(str(exc)) from exc
 
-    config.set("active_profile", profile_name)
-    config.save()
-    return deployed
+    try:
+        run_hook(cdir, profile, "post_deploy")
+    except HookError as exc:
+        raise ProfileDeployError(str(exc)) from exc
 
 
-def undeploy_profile(config: Config, profile_name: str) -> List[str]:
+def undeploy_profile(
+    config: Config,
+    profile: str,
+    config_dir: Optional[Path] = None,
+) -> None:
+    """Remove symlinks for every mapping in *profile*.
+
+    Runs pre_undeploy hook before and post_undeploy hook after removal.
+    Raises ProfileDeployError on unknown profile or symlink failure.
     """
-    Remove all symlinks defined in the given profile.
+    profiles = config.get("profiles", {})
+    if profile not in profiles:
+        raise ProfileDeployError(f"Unknown profile '{profile}'")
 
-    Returns:
-        List of target paths that were removed.
+    cdir = config_dir or Path(config._path).parent
 
-    Raises:
-        ProfileDeployError: If the profile is unknown or removal fails.
-    """
-    if profile_name not in config.profiles:
-        raise ProfileDeployError(f"Unknown profile: '{profile_name}'")
+    try:
+        run_hook(cdir, profile, "pre_undeploy")
+    except HookError as exc:
+        raise ProfileDeployError(str(exc)) from exc
 
-    links: Dict[str, str] = config.profiles[profile_name].get("links", {})
-    removed: List[str] = []
-
-    for _source, target in links.items():
+    mappings = profiles[profile].get("mappings", {})
+    for src, dst in mappings.items():
         try:
-            if remove_symlink(target):
-                removed.append(target)
+            remove_symlink(dst)
         except SymlinkError as exc:
-            raise ProfileDeployError(
-                f"Failed to remove symlink '{target}': {exc}"
-            ) from exc
+            raise ProfileDeployError(str(exc)) from exc
 
-    if config.get("active_profile") == profile_name:
-        config.set("active_profile", None)
-        config.save()
-
-    return removed
+    try:
+        run_hook(cdir, profile, "post_undeploy")
+    except HookError as exc:
+        raise ProfileDeployError(str(exc)) from exc
